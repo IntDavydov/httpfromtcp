@@ -4,50 +4,70 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 )
 
 func main() {
-	fileName := "messages.txt"
+	// create signal channel with buffer of 1
+	stop := make(chan os.Signal, 1)
+	// setup different signals for the channel to listen
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	// Open the file for reading
-	file, err := os.Open(fileName)
+	l, err := net.Listen("tcp", ":42069")
 	if err != nil {
-		fmt.Println("Error opening file: ", err)
-		return
+		log.Fatalf("Could not set up tcp on port %s: %s\n", l.Addr(), err)
 	}
+	defer l.Close()
 
-	fmt.Printf("Reading file from %s\n", fileName)
+	fmt.Printf("TCP server vibing on port: %s\n", l.Addr())
 	fmt.Println(">>>>>>>>>>>>>>>")
 
-	lineChan := getLinesChannel(file)
-	for line := range lineChan {
-		fmt.Printf("read: %s\n", line)
-	}
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				fmt.Println("Error accepting connection: ", err)
+				continue
+			}
 
-	fmt.Println(">>> Done reading <<<")
+			go handleConnection(conn)
+		}
+	}()
+
+	<-stop
+	fmt.Println("\nShutting down...")
 }
 
-func getLinesChannel(file io.ReadCloser) <-chan string {
-	lineChan := make(chan string)
+func handleConnection(conn net.Conn) {
+	fmt.Printf("New connection from: %s\n", conn.RemoteAddr())
 
+	linesChan := getLinesChannel(conn)
+	for line := range linesChan {
+		fmt.Printf("%s\n", line)
+	}
+
+	fmt.Println(">>> Connection closed <<<")
+}
+
+func getLinesChannel(conn net.Conn) <-chan string {
+	linesChan := make(chan string)
 	go func() {
-		defer file.Close()
-		defer close(lineChan)
+		defer conn.Close()
+		defer close(linesChan)
 
-		// Create a buffer to hold data chunks
 		buffer := make([]byte, 8)
 		currentLine := ""
 
 		for {
-			// Read fills our buffer and returns:
-			// n: how many bytes were actually read
-			// err: any error encountered (like EOF)
-			n, err := file.Read(buffer)
+			n, err := conn.Read(buffer)
 			if err != nil {
 				if currentLine != "" {
-					lineChan <- currentLine
+					linesChan <- currentLine
 				}
 
 				if errors.Is(err, io.EOF) {
@@ -60,7 +80,7 @@ func getLinesChannel(file io.ReadCloser) <-chan string {
 			str := string(buffer[:n])
 			parts := strings.Split(str, "\n")
 			for i := 0; i < len(parts)-1; i++ {
-				lineChan <- fmt.Sprintf("%s%s", currentLine, parts[i])
+				linesChan <- fmt.Sprintf("%s%s", currentLine, parts[i])
 				currentLine = ""
 			}
 
@@ -68,5 +88,5 @@ func getLinesChannel(file io.ReadCloser) <-chan string {
 		}
 	}()
 
-	return lineChan
+	return linesChan
 }
