@@ -9,8 +9,12 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 )
+
+const port = ":42069"
 
 func main() {
 	// create signal channel with buffer of 1
@@ -18,29 +22,53 @@ func main() {
 	// setup different signals for the channel to listen
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	l, err := net.Listen("tcp", ":42069")
+	listener, err := net.Listen("tcp", port)
 	if err != nil {
-		log.Fatalf("Could not set up tcp on port %s: %s\n", l.Addr(), err)
+		log.Fatalf("Tcp could not listen on port %s: %s\n", port, err)
 	}
-	defer l.Close()
 
-	fmt.Printf("TCP server vibing on port: %s\n", l.Addr())
+	var wg sync.WaitGroup
+
+	fmt.Printf("Listening for TCP traffic on port %s\n", port)
 	fmt.Println(">>>>>>>>>>>>>>>")
 
 	go func() {
 		for {
-			conn, err := l.Accept()
+			conn, err := listener.Accept()
 			if err != nil {
-				fmt.Println("Error accepting connection: ", err)
-				continue
+				return
 			}
 
-			go handleConnection(conn)
+			wg.Add(1) // new conn
+			go func(c net.Conn) {
+				defer wg.Done() // signal we're done when the function exits
+				handleConnection(c)
+			}(conn)
 		}
 	}()
 
-	<-stop
+	<-stop // wait for ctrl+c
 	fmt.Println("\nShutting down...")
+
+	// stop accepting new connections
+	listener.Close()
+
+	waitFinished := make(chan struct{})
+
+	go func() {
+		// wait for current connections to finish
+		wg.Wait()
+		close(waitFinished)
+	}()
+
+	select {
+	case <-waitFinished:
+		fmt.Println("All connections closed gracefully.")
+	case <-time.After(5 * time.Second):
+		fmt.Println("Shutdown timed out! Forcing exit...")
+	}
+
+	fmt.Println("Peace out.")
 }
 
 func handleConnection(conn net.Conn) {
@@ -51,7 +79,7 @@ func handleConnection(conn net.Conn) {
 		fmt.Printf("%s\n", line)
 	}
 
-	fmt.Println(">>> Connection closed <<<")
+	fmt.Printf(">>> Connection to %s closed <<<", conn.RemoteAddr())
 }
 
 func getLinesChannel(conn net.Conn) <-chan string {
