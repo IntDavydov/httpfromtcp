@@ -23,7 +23,12 @@ func main() {
 		fmt.Println("Dial error:", err)
 		os.Exit(1)
 	}
-	defer conn.Close()
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			fmt.Println("Error closing connection: ", err)
+		}
+	}()
 
 	reader := bufio.NewReader(os.Stdin)
 
