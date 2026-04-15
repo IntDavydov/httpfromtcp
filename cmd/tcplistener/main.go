@@ -79,7 +79,7 @@ func handleConnection(conn net.Conn) {
 		fmt.Printf("%s\n", line)
 	}
 
-	fmt.Printf(">>> Connection to %s closed <<<", conn.RemoteAddr())
+	fmt.Printf(">>> Connection to %s closed <<<\n", conn.RemoteAddr())
 }
 
 func getLinesChannel(conn net.Conn) <-chan string {
