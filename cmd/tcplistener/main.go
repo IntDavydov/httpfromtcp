@@ -1,17 +1,16 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/IntDavydov/httpfromtcp/internal/request"
 )
 
 const port = ":42069"
@@ -74,47 +73,17 @@ func main() {
 func handleConnection(conn net.Conn) {
 	fmt.Printf("New connection from: %s\n", conn.RemoteAddr())
 
-	linesChan := getLinesChannel(conn)
-	for line := range linesChan {
-		fmt.Printf("%s\n", line)
+	req, err := request.RequestFromReader(conn)
+	if err != nil {
+		fmt.Println("Skill issue during parse:", err)
+		return
 	}
 
+	fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s\n",
+		req.RequestLine.Method,
+		req.RequestLine.RequestTarget,
+		req.RequestLine.HTTPVersion,
+	)
+
 	fmt.Printf(">>> Connection to %s closed <<<\n", conn.RemoteAddr())
-}
-
-func getLinesChannel(conn net.Conn) <-chan string {
-	linesChan := make(chan string)
-	go func() {
-		defer conn.Close()
-		defer close(linesChan)
-
-		buffer := make([]byte, 8)
-		currentLine := ""
-
-		for {
-			n, err := conn.Read(buffer)
-			if err != nil {
-				if currentLine != "" {
-					linesChan <- currentLine
-				}
-
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				fmt.Printf("Error: %s\n", err.Error())
-				return
-			}
-
-			str := string(buffer[:n])
-			parts := strings.Split(str, "\n")
-			for i := 0; i < len(parts)-1; i++ {
-				linesChan <- fmt.Sprintf("%s%s", currentLine, parts[i])
-				currentLine = ""
-			}
-
-			currentLine += parts[len(parts)-1]
-		}
-	}()
-
-	return linesChan
 }

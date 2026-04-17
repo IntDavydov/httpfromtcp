@@ -4,11 +4,15 @@ package request
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+
+	"github.com/IntDavydov/httpfromtcp/internal/headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	state       parserState
 }
 
@@ -22,6 +26,7 @@ type parserState int
 
 const (
 	initialized parserState = iota
+	parsingHeaders
 	done
 )
 
@@ -53,6 +58,9 @@ var RequestFromReader = func(reader io.Reader) (*Request, error) {
 
 		if err != nil {
 			if err == io.EOF {
+				if req.state != done {
+					return nil, fmt.Errorf("incomplete request")
+				}
 				req.state = done
 				break
 			}
@@ -67,6 +75,7 @@ var RequestFromReader = func(reader io.Reader) (*Request, error) {
 		}
 
 		// parsed something slide the remaining data to the front
+		// warning: byte shift
 		if parsedBytes > 0 {
 			copy(buf, buf[parsedBytes:readToIndex])
 			readToIndex -= parsedBytes
@@ -97,8 +106,8 @@ func (r *Request) parse(rawData []byte) (parsedBytes int, err error) {
 		r.state = done
 		return pb, nil
 
-	case done:
-		return -1, errors.New("error: trying to read data in done state")
+	case parsingHeaders:
+		r.Headers.Parse(rawData)
 	default:
 		return -1, errors.New("error: unknown state")
 	}
@@ -141,6 +150,7 @@ func requestLineFromBytes(rawData []byte) (*RequestLine, error) {
 		return nil, versionError
 	}
 
+	// cloning bytes from buf so there is not byte shift edge cases
 	return &RequestLine{
 		Method:        clone(method),
 		RequestTarget: clone(parts[1]),

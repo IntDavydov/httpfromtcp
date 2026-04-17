@@ -91,4 +91,85 @@ func TestRequestLineParse(t *testing.T) {
 	}
 	_, err = RequestFromReader(reader)
 	require.Error(t, err)
+
+	t.Run("Standart Headers", func(t *testing.T) {
+		reader := &chunkReader{
+			data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+			numBytesPerRead: 3,
+		}
+		r, err := RequestFromReader(reader)
+		require.NoError(t, err)
+		require.NotNil(t, r)
+		assert.Equal(t, "localhost:42069", r.Headers["host"])
+		assert.Equal(t, "curl/7.81.0", r.Headers["user-agent"])
+		assert.Equal(t, "*/*", r.Headers["accept"])
+	})
+
+	t.Run("Malformed Header", func(t *testing.T) {
+		reader = &chunkReader{
+			data:            "GET / HTTP/1.1\r\nHost localhost:42069\r\n\r\n",
+			numBytesPerRead: 3,
+		}
+		_, err := RequestFromReader(reader)
+		require.Error(t, err)
+	})
+
+	t.Run("Empty Headers", func(t *testing.T) {
+		reader = &chunkReader{
+			data:            "GET / HTTP/1.1\r\n\r\n",
+			numBytesPerRead: 3,
+		}
+		r, err := RequestFromReader(reader)
+		require.NoError(t, err)
+		require.NotNil(t, r)
+
+		assert.Empty(t, r.Headers)
+	})
+
+	t.Run("Duplicate Headers", func(t *testing.T) {
+		reader = &chunkReader{
+			data:            "GET / HTTP/1.1\r\nSet-Cookie: id=123\r\nSet-Cookie: theme=dark\r\n\r\n",
+			numBytesPerRead: 3,
+		}
+		r, err := RequestFromReader(reader)
+		require.NoError(t, err)
+		require.NotNil(t, r)
+
+		assert.Equal(t, "id=123, theme=dark", r.Headers["set-cookie"])
+	})
+
+	t.Run("Case Insensitive Headers", func(t *testing.T) {
+		reader = &chunkReader{
+			data:            "GET / HTTP/1.1\r\nSEt-COOkie: id=123\r\nset-cookie: theme=dark\r\n\r\n",
+			numBytesPerRead: 3,
+		}
+		r, err := RequestFromReader(reader)
+		require.NoError(t, err)
+		require.NotNil(t, r)
+
+		assert.Equal(t, "id=123, theme=dark", r.Headers["set-cookie"])
+	})
+
+	t.Run("Case Insensitive Headers", func(t *testing.T) {
+		reader = &chunkReader{
+			data:            "GET / HTTP/1.1\r\nSEt-COOkie: id=123\r\nset-cookie: theme=dark\r\n\r\n",
+			numBytesPerRead: 3,
+		}
+		r, err := RequestFromReader(reader)
+		require.NoError(t, err)
+		require.NotNil(t, r)
+
+		assert.Equal(t, "id=123, theme=dark", r.Headers["set-cookie"])
+		assert.NotContains(t, r.Headers, "HOST")
+	})
+
+	t.Run("Missing End of Headers", func(t *testing.T) {
+		reader = &chunkReader{
+			data:            "Host: localhost\r\n",
+			numBytesPerRead: 3,
+		}
+		r, err := RequestFromReader(reader)
+		require.Error(t, err)
+		require.NotNil(t, r)
+	})
 }
