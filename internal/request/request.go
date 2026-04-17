@@ -39,7 +39,8 @@ var RequestFromReader = func(reader io.Reader) (*Request, error) {
 	buf := make([]byte, bufferSize)
 	readToIndex := 0 // track where next read should write
 	req := &Request{
-		state: initialized,
+		state:   initialized,
+		Headers: headers.NewHeaders(),
 	}
 
 	for req.state != done {
@@ -51,6 +52,7 @@ var RequestFromReader = func(reader io.Reader) (*Request, error) {
 		}
 
 		// read into empty part of buf
+		// read buf amount of bytes
 		readBytes, err := reader.Read(buf[readToIndex:])
 		if readBytes > 0 {
 			readToIndex += readBytes
@@ -59,7 +61,7 @@ var RequestFromReader = func(reader io.Reader) (*Request, error) {
 		if err != nil {
 			if err == io.EOF {
 				if req.state != done {
-					return nil, fmt.Errorf("incomplete request")
+					return nil, fmt.Errorf("incomplete request , in state: %d, read n bytes on EOF: %d", req.state, readBytes)
 				}
 				req.state = done
 				break
@@ -80,34 +82,61 @@ var RequestFromReader = func(reader io.Reader) (*Request, error) {
 			copy(buf, buf[parsedBytes:readToIndex])
 			readToIndex -= parsedBytes
 		}
-
-		if req.state == done {
-			break
-		}
 	}
 
 	return req, nil
 }
 
-func (r *Request) parse(rawData []byte) (parsedBytes int, err error) {
-	switch r.state {
+func (req *Request) parse(rawData []byte) (parsedBytes int, err error) {
+	totalBytesParsed := 0
+	for req.state != done {
+		parsedBytes, err := req.parseSingle(rawData[totalBytesParsed:])
+		if err != nil {
+			return -1, err
+		}
+
+		totalBytesParsed += parsedBytes
+
+		if parsedBytes == 0 {
+			break
+		}
+	}
+	return totalBytesParsed, nil
+}
+
+func (req *Request) parseSingle(rawDataPart []byte) (parsedBytes int, err error) {
+	switch req.state {
 	case initialized:
-		rl, pb, err := parseRequestLine(rawData)
+		rl, parsedBytes, err := parseRequestLine(rawDataPart)
 		if err != nil {
 			return -1, err
 		}
 
 		// if no data was processed (e.g., partial line), return 0 so caller waits for more
-		if pb == 0 {
+		if parsedBytes == 0 {
 			return 0, nil
 		}
 
-		r.RequestLine = *rl
-		r.state = done
-		return pb, nil
+		req.RequestLine = *rl
+		req.state = parsingHeaders
+		return parsedBytes, nil
 
 	case parsingHeaders:
-		r.Headers.Parse(rawData)
+		parsedBytes, headersDone, err := req.Headers.Parse(rawDataPart)
+		if err != nil {
+			return -1, err
+		}
+
+		if parsedBytes == 0 {
+			return 0, nil
+		}
+
+		if headersDone {
+			req.state = done
+		}
+
+		return parsedBytes, nil
+
 	default:
 		return -1, errors.New("error: unknown state")
 	}

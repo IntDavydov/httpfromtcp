@@ -50,7 +50,7 @@ func init() {
 
 const crlf = "\r\n"
 
-func (h Headers) Parse(data []byte) (n int, done bool, err error) {
+func (h Headers) Parse(data []byte) (parsedBytes int, done bool, err error) {
 	crlfIdx := bytes.Index(data, []byte(crlf))
 	if crlfIdx == -1 {
 		// not enough data

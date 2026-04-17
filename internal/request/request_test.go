@@ -165,11 +165,11 @@ func TestRequestLineParse(t *testing.T) {
 
 	t.Run("Missing End of Headers", func(t *testing.T) {
 		reader = &chunkReader{
-			data:            "Host: localhost\r\n",
+			data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0",
 			numBytesPerRead: 3,
 		}
 		r, err := RequestFromReader(reader)
 		require.Error(t, err)
-		require.NotNil(t, r)
+		require.Nil(t, r)
 	})
 }

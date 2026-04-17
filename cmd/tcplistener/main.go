@@ -28,8 +28,7 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	fmt.Printf("Listening for TCP traffic on port %s\n", port)
-	fmt.Println(">>>>>>>>>>>>>>>")
+	fmt.Printf(">>> Listening for TCP traffic on port %s <<<\n\n", port)
 
 	go func() {
 		for {
@@ -85,5 +84,14 @@ func handleConnection(conn net.Conn) {
 		req.RequestLine.HTTPVersion,
 	)
 
-	fmt.Printf(">>> Connection to %s closed <<<\n", conn.RemoteAddr())
+	printHeaders(req)
+
+	fmt.Printf("\n>>> Connection to %s closed <<<\n\n", conn.RemoteAddr())
+}
+
+func printHeaders(req *request.Request) {
+	fmt.Println("Headers:")
+	for key, value := range req.Headers {
+		fmt.Printf("- %s: %s\n", key, value)
+	}
 }
