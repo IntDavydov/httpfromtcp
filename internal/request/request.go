@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/IntDavydov/httpfromtcp/internal/headers"
 )
@@ -13,6 +14,7 @@ import (
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	state       parserState
 }
 
@@ -27,6 +29,7 @@ type parserState int
 const (
 	initialized parserState = iota
 	parsingHeaders
+	parsingBody
 	done
 )
 
@@ -41,6 +44,7 @@ var RequestFromReader = func(reader io.Reader) (*Request, error) {
 	req := &Request{
 		state:   initialized,
 		Headers: headers.NewHeaders(),
+		Body:    make([]byte, 0),
 	}
 
 	for req.state != done {
@@ -60,8 +64,16 @@ var RequestFromReader = func(reader io.Reader) (*Request, error) {
 
 		if err != nil {
 			if err == io.EOF {
+				// uncomment this to not track content-length that is bigger than body
+				/* if req.state == parsingBody {
+					rawLen, ok := req.Headers["content-length"]
+					if !ok || len(rawLen) == 0 || rawLen == "0" {
+						req.state = done
+					}
+				} */
+
 				if req.state != done {
-					return nil, fmt.Errorf("incomplete request , in state: %d, read n bytes on EOF: %d", req.state, readBytes)
+					return nil, fmt.Errorf("incomplete request, in state: %d, read %d bytes on EOF\ntip: check content-length and body length", req.state, readBytes)
 				}
 				req.state = done
 				break
@@ -89,7 +101,7 @@ var RequestFromReader = func(reader io.Reader) (*Request, error) {
 
 func (req *Request) parse(rawData []byte) (parsedBytes int, err error) {
 	totalBytesParsed := 0
-	for req.state != done {
+	for {
 		parsedBytes, err := req.parseSingle(rawData[totalBytesParsed:])
 		if err != nil {
 			return -1, err
@@ -97,7 +109,7 @@ func (req *Request) parse(rawData []byte) (parsedBytes int, err error) {
 
 		totalBytesParsed += parsedBytes
 
-		if parsedBytes == 0 {
+		if req.state == done || parsedBytes == 0 {
 			break
 		}
 	}
@@ -132,10 +144,45 @@ func (req *Request) parseSingle(rawDataPart []byte) (parsedBytes int, err error)
 		}
 
 		if headersDone {
-			req.state = done
+			req.state = parsingBody
 		}
 
 		return parsedBytes, nil
+
+	case parsingBody:
+		strLen, ok := req.Headers.Get("content-length")
+		if !ok {
+			req.state = done
+			return len(rawDataPart), nil
+		}
+
+		// just convert to int
+		contentLength, err := strconv.Atoi(strLen)
+		if err != nil {
+			return -1, fmt.Errorf("malformed content-length: %s", err)
+		}
+
+		// calculate bytes needed for body
+		bytesNeeded := contentLength - len(req.Body)
+
+		// how many do we have in the chunk
+		bytesAvailable := len(rawDataPart)
+
+		// could be removed to keep the pipelining
+		if bytesAvailable > bytesNeeded {
+			actualTotalReceived := len(req.Body) + bytesAvailable
+			return -1, fmt.Errorf("error: body longer than content length, %d > %d", actualTotalReceived, contentLength)
+		}
+
+		// only take what we need
+		bytesToCopy := min(bytesAvailable, bytesNeeded)
+		req.Body = append(req.Body, rawDataPart[:bytesToCopy]...)
+
+		if len(req.Body) == contentLength {
+			req.state = done
+		}
+
+		return bytesToCopy, nil
 
 	default:
 		return -1, errors.New("error: unknown state")

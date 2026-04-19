@@ -86,6 +86,8 @@ func handleConnection(conn net.Conn) {
 
 	printHeaders(req)
 
+	fmt.Printf("Body:\n%s\n", req.Body)
+
 	fmt.Printf("\n>>> Connection to %s closed <<<\n\n", conn.RemoteAddr())
 }
 

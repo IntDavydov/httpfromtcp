@@ -50,6 +50,12 @@ func init() {
 
 const crlf = "\r\n"
 
+func (h Headers) Get(key string) (val string, ok bool) {
+	validKey := strings.ToLower(key)
+	val, ok = h[validKey]
+	return val, ok
+}
+
 func (h Headers) Parse(data []byte) (parsedBytes int, done bool, err error) {
 	crlfIdx := bytes.Index(data, []byte(crlf))
 	if crlfIdx == -1 {
@@ -115,5 +121,18 @@ func addToHeader(h Headers, key []byte, val []byte) {
 		}, ", ")
 	} else {
 		h[validKey] = validVal
+	}
+}
+
+func (h Headers) Set(key, val string) {
+	key = strings.ToLower(key)
+
+	if v, ok := h[key]; ok {
+		h[key] = strings.Join([]string{
+			v,
+			val,
+		}, ", ")
+	} else {
+		h[key] = val
 	}
 }
