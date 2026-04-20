@@ -50,10 +50,15 @@ func init() {
 
 const crlf = "\r\n"
 
-func (h Headers) Get(key string) (val string, ok bool) {
+func (h Headers) Override(key, val string) error {
 	validKey := strings.ToLower(key)
-	val, ok = h[validKey]
-	return val, ok
+
+	if check := isValidatChars([]byte(val), true); check == '\x00' {
+		h[validKey] = val
+		return nil
+	}
+
+	return fmt.Errorf("malformed value")
 }
 
 func (h Headers) Parse(data []byte) (parsedBytes int, done bool, err error) {
@@ -70,6 +75,7 @@ func (h Headers) Parse(data []byte) (parsedBytes int, done bool, err error) {
 	keyVal := bytes.SplitN(data[:crlfIdx], []byte(":"), 2)
 	trimmedKey := bytes.TrimSpace(keyVal[0])
 
+	// check for spaces key
 	if len(trimmedKey) != len(keyVal[0]) {
 		return -1, false, errors.New("error: malformed key, white spaces around")
 	}
@@ -124,15 +130,28 @@ func addToHeader(h Headers, key []byte, val []byte) {
 	}
 }
 
-func (h Headers) Set(key, val string) {
+func (h Headers) Get(key string) (val string, ok bool) {
+	validKey := strings.ToLower(key)
+	val, ok = h[validKey]
+	return val, ok
+}
+
+func (h Headers) Set(key string, vals ...string) {
 	key = strings.ToLower(key)
 
-	if v, ok := h[key]; ok {
-		h[key] = strings.Join([]string{
-			v,
-			val,
-		}, ", ")
-	} else {
-		h[key] = val
+	for _, val := range vals {
+		if v, ok := h[key]; ok && v != "" {
+			h[key] = strings.Join([]string{
+				v,
+				val,
+			}, ", ")
+		} else {
+			h[key] = val
+		}
 	}
+}
+
+func (h Headers) Remove(key string) {
+	key = strings.ToLower(key)
+	delete(h, key)
 }

@@ -64,16 +64,13 @@ func (s *Server) handle(conn net.Conn) {
 	fmt.Println("Connection from: ", conn.LocalAddr())
 	defer conn.Close()
 
-	writer := &response.Writer{Conn: conn}
+	w := response.NewWriter(conn)
 
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		writer.WriteStatusLine(response.BadRequest)
-		writer.WriteHeaders(response.GetDefaultHeaders(len(err.Error())))
-		fmt.Fprint(writer.Conn, err.Error())
-
+		response.HandleServerError(w, response.BadRequest, err)
 		return
 	}
 
-	s.handler(writer, req)
+	s.handler(w, req)
 }
